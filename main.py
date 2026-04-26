@@ -105,10 +105,15 @@ def main() -> None:
     active_mode = MODES[mode_index]
     active_gesture = "NONE"
     low_light_enabled = CAMERA.low_light_enhancement
+    vision_enabled = True
+    frame_counter = 0
+    cached_hands = []
+    target_frame_time = 1.0 / max(CAMERA.target_fps, 1)
 
     prev_time = time.time()
 
     while cap.isOpened():
+        loop_start = time.time()
         ok, frame = cap.read()
         if not ok:
             break
@@ -116,8 +121,14 @@ def main() -> None:
         frame = cv2.flip(frame, 1)
         if low_light_enabled:
             frame = enhance_for_low_light(frame)
-        results = tracker.process(frame)
-        hands = tracker.extract_landmarks(frame, results)
+        frame_counter += 1
+        should_process = vision_enabled and (frame_counter % max(CAMERA.process_every_n_frames, 1) == 0)
+
+        if should_process:
+            results = tracker.process(frame)
+            cached_hands = tracker.extract_landmarks(frame, results)
+
+        hands = cached_hands if vision_enabled else []
 
         if hands:
             dominant = next((h for h in hands if h["side"] == "Right"), hands[0])
@@ -180,7 +191,7 @@ def main() -> None:
 
         cv2.putText(
             frame,
-            "Keys: [s] start/stop  [m] mode switch  [l] low-light  [c] clear draw  [q] quit",
+            "Keys: [s] action on/off  [v] vision on/off  [m] mode  [l] low-light  [c] clear  [q] quit",
             (10, CAMERA.height - 12),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.6,
@@ -202,8 +213,17 @@ def main() -> None:
             actions.drag_release()
         if key == ord("l"):
             low_light_enabled = not low_light_enabled
+        if key == ord("v"):
+            vision_enabled = not vision_enabled
+            if not vision_enabled:
+                cached_hands = []
         if key == ord("c") and active_mode == "DRAW":
             actions.clear_drawing()
+
+        elapsed = time.time() - loop_start
+        sleep_time = target_frame_time - elapsed
+        if sleep_time > 0:
+            time.sleep(sleep_time)
 
     actions.drag_release()
     cap.release()

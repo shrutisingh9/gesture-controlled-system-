@@ -5,12 +5,14 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class CameraConfig:
-    width: int = 1280
-    height: int = 720
+    width: int = 640
+    height: int = 480
     smoothing_factor: float = 0.7
     detection_confidence: float = 0.7
     tracking_confidence: float = 0.6
     low_light_enhancement: bool = False
+    target_fps: int = 20
+    process_every_n_frames: int = 2
 
 
 @dataclass(frozen=True)

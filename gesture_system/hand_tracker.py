@@ -28,7 +28,7 @@ class HandTracker:
             self.mp_hands = mp.solutions.hands
             self.mp_draw = mp.solutions.drawing_utils
             self.hands = self.mp_hands.Hands(
-                max_num_hands=2,
+                max_num_hands=1,
                 min_detection_confidence=detection_confidence,
                 min_tracking_confidence=tracking_confidence,
             )
@@ -42,7 +42,7 @@ class HandTracker:
             model_path = self._ensure_task_model()
             options = vision.HandLandmarkerOptions(
                 base_options=python.BaseOptions(model_asset_path=model_path),
-                num_hands=2,
+                num_hands=1,
                 min_hand_detection_confidence=detection_confidence,
                 min_tracking_confidence=tracking_confidence,
                 running_mode=vision.RunningMode.VIDEO,
