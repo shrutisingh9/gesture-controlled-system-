@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from urllib.request import urlretrieve
 
@@ -44,8 +45,10 @@ class HandTracker:
                 num_hands=2,
                 min_hand_detection_confidence=detection_confidence,
                 min_tracking_confidence=tracking_confidence,
+                running_mode=vision.RunningMode.VIDEO,
             )
             self.landmarker = vision.HandLandmarker.create_from_options(options)
+            self._last_timestamp_ms = 0
             return
 
         raise RuntimeError("Unsupported mediapipe build: no solutions/tasks API found.")
@@ -75,7 +78,11 @@ class HandTracker:
             return self.hands.process(rgb)
 
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=np.ascontiguousarray(rgb))
-        return self.landmarker.detect(mp_image)
+        timestamp_ms = int(time.time() * 1000)
+        if timestamp_ms <= self._last_timestamp_ms:
+            timestamp_ms = self._last_timestamp_ms + 1
+        self._last_timestamp_ms = timestamp_ms
+        return self.landmarker.detect_for_video(mp_image, timestamp_ms)
 
     def extract_landmarks(self, frame, results):
         if self.backend == "solutions":

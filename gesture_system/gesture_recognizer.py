@@ -21,11 +21,29 @@ class GestureState:
     last_pinch_time: float = 0.0
     scroll_anchor_y: float | None = None
     swipe_anchor_x: float | None = None
+    candidate_gesture: str = "NONE"
+    candidate_count: int = 0
 
 
 class GestureRecognizer:
     def __init__(self) -> None:
         self.state = GestureState()
+
+    def _stabilize(self, gesture: str) -> str:
+        if gesture == "NONE":
+            self.state.candidate_gesture = "NONE"
+            self.state.candidate_count = 0
+            return "NONE"
+
+        if gesture == self.state.candidate_gesture:
+            self.state.candidate_count += 1
+        else:
+            self.state.candidate_gesture = gesture
+            self.state.candidate_count = 1
+
+        if self.state.candidate_count >= THRESHOLDS.gesture_confirm_frames:
+            return gesture
+        return "NONE"
 
     @staticmethod
     def finger_states(lm: list[tuple[int, int]]) -> dict[str, bool]:
@@ -54,16 +72,16 @@ class GestureRecognizer:
         payload = {"fingers": fingers, "index_tip": index, "wrist": wrist}
 
         if mode == "MOUSE":
+            # Keep scroll as highest priority in mouse mode so it does not
+            # get overridden by any utility gesture checks below.
+            if fingers["index"] and fingers["middle"] and not fingers["ring"] and not fingers["pinky"]:
+                payload["gesture"] = self._stabilize("SCROLL")
+                return payload
+
             if fingers["index"] and not fingers["middle"] and not fingers["ring"] and not fingers["pinky"]:
                 gesture = "MOVE_CURSOR"
 
             if pinch_index < THRESHOLDS.pinch_distance:
-                if now - self.state.last_pinch_time < THRESHOLDS.double_click_window_s:
-                    gesture = "DOUBLE_CLICK"
-                else:
-                    gesture = "LEFT_CLICK"
-                self.state.last_pinch_time = now
-
                 if not self.state.pinch_active:
                     self.state.drag_start_time = now
                     self.state.pinch_active = True
@@ -71,14 +89,21 @@ class GestureRecognizer:
                     gesture = "DRAG"
                     self.state.drag_active = True
             else:
+                if self.state.pinch_active:
+                    if self.state.drag_active:
+                        gesture = "NONE"
+                    else:
+                        # Click only on pinch release to avoid opening items while starting drag.
+                        if now - self.state.last_pinch_time < THRESHOLDS.double_click_window_s:
+                            gesture = "DOUBLE_CLICK"
+                        else:
+                            gesture = "LEFT_CLICK"
+                        self.state.last_pinch_time = now
                 self.state.pinch_active = False
                 self.state.drag_active = False
 
             if pinch_middle < THRESHOLDS.pinch_distance:
                 gesture = "RIGHT_CLICK"
-
-            if fingers["index"] and fingers["middle"] and not fingers["ring"] and not fingers["pinky"]:
-                gesture = "SCROLL"
 
         elif mode == "MEDIA":
             if fingers["thumb"] and fingers["index"] and not fingers["middle"]:
@@ -106,18 +131,17 @@ class GestureRecognizer:
             elif not fingers["index"] and not fingers["middle"] and not fingers["ring"] and not fingers["pinky"]:
                 gesture = "DRAW_IDLE"
 
-        if fingers["thumb"] and fingers["index"] and fingers["middle"] and fingers["ring"] and fingers["pinky"]:
-            gesture = "LOCK_SYSTEM"
-        if fingers["thumb"] and fingers["index"] and fingers["middle"] and not fingers["ring"] and not fingers["pinky"]:
-            gesture = "SCREENSHOT"
         if not fingers["thumb"] and fingers["index"] and fingers["middle"] and not fingers["ring"] and fingers["pinky"]:
             gesture = "MINIMIZE_WINDOW"
         if fingers["thumb"] and not fingers["index"] and not fingers["middle"] and fingers["ring"] and not fingers["pinky"]:
             gesture = "MAXIMIZE_RESTORE_WINDOW"
-        if not fingers["thumb"] and fingers["index"] and not fingers["middle"] and fingers["ring"] and fingers["pinky"]:
-            gesture = "OPEN_APP"
         if fingers["thumb"] and not fingers["index"] and fingers["middle"] and not fingers["ring"] and fingers["pinky"]:
             gesture = "CLOSE_APP"
 
-        payload["gesture"] = gesture
+        # Click-type gestures are instant events; do not delay them with frame stabilization.
+        if gesture in {"LEFT_CLICK", "DOUBLE_CLICK", "RIGHT_CLICK"}:
+            payload["gesture"] = gesture
+            return payload
+
+        payload["gesture"] = self._stabilize(gesture)
         return payload

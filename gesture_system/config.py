@@ -10,6 +10,7 @@ class CameraConfig:
     smoothing_factor: float = 0.7
     detection_confidence: float = 0.7
     tracking_confidence: float = 0.6
+    low_light_enhancement: bool = False
 
 
 @dataclass(frozen=True)
@@ -22,6 +23,7 @@ class GestureThresholds:
     swipe_min_dx: float = 70.0
     scroll_sensitivity: float = 1.5
     sudden_movement_filter_px: float = 120.0
+    gesture_confirm_frames: int = 3
 
 
 @dataclass(frozen=True)

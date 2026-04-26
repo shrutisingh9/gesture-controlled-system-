@@ -13,6 +13,17 @@ from gesture_system.gesture_recognizer import GestureRecognizer
 from gesture_system.hand_tracker import HandTracker
 
 
+def enhance_for_low_light(frame):
+    # Lightweight enhancement for low-light scenes.
+    ycrcb = cv2.cvtColor(frame, cv2.COLOR_BGR2YCrCb)
+    y, cr, cb = cv2.split(ycrcb)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    y_enh = clahe.apply(y)
+    merged = cv2.merge((y_enh, cr, cb))
+    enhanced = cv2.cvtColor(merged, cv2.COLOR_YCrCb2BGR)
+    return cv2.convertScaleAbs(enhanced, alpha=1.05, beta=4)
+
+
 def validate_runtime() -> None:
     major, minor = sys.version_info.major, sys.version_info.minor
     if (major, minor) >= (3, 13):
@@ -93,6 +104,7 @@ def main() -> None:
     mode_index = 0
     active_mode = MODES[mode_index]
     active_gesture = "NONE"
+    low_light_enabled = CAMERA.low_light_enhancement
 
     prev_time = time.time()
 
@@ -102,6 +114,8 @@ def main() -> None:
             break
 
         frame = cv2.flip(frame, 1)
+        if low_light_enabled:
+            frame = enhance_for_low_light(frame)
         results = tracker.process(frame)
         hands = tracker.extract_landmarks(frame, results)
 
@@ -138,12 +152,6 @@ def main() -> None:
                     actions.media_key("next track")
                 elif active_gesture == "MEDIA_PREV":
                     actions.media_key("previous track")
-                elif active_gesture == "SCREENSHOT":
-                    actions.screenshot()
-                elif active_gesture == "LOCK_SYSTEM":
-                    actions.lock_system()
-                elif active_gesture == "OPEN_APP":
-                    actions.open_app("notepad")
                 elif active_gesture == "MINIMIZE_WINDOW":
                     actions.minimize_active_window()
                 elif active_gesture == "MAXIMIZE_RESTORE_WINDOW":
@@ -172,7 +180,7 @@ def main() -> None:
 
         cv2.putText(
             frame,
-            "Keys: [s] start/stop  [m] mode switch  [c] clear draw  [q] quit",
+            "Keys: [s] start/stop  [m] mode switch  [l] low-light  [c] clear draw  [q] quit",
             (10, CAMERA.height - 12),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.6,
@@ -192,6 +200,8 @@ def main() -> None:
             mode_index = (mode_index + 1) % len(MODES)
             active_mode = MODES[mode_index]
             actions.drag_release()
+        if key == ord("l"):
+            low_light_enabled = not low_light_enabled
         if key == ord("c") and active_mode == "DRAW":
             actions.clear_drawing()
 
