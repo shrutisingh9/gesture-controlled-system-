@@ -1,5 +1,3 @@
-"""Map recognized gestures to system automation actions."""
-
 from __future__ import annotations
 
 import ctypes
@@ -38,6 +36,7 @@ except Exception:
 
 class ActionController:
     def __init__(self, frame_width: int, frame_height: int) -> None:
+        # Frame size is used to map camera coordinates to full-screen coordinates.
         self.frame_width = frame_width
         self.frame_height = frame_height
         self.screen_w, self.screen_h = pyautogui.size()
@@ -45,15 +44,19 @@ class ActionController:
         self.click_cooldown = Cooldown(THRESHOLDS.click_cooldown_s)
         self.media_cooldown = Cooldown(0.6)
         self.window_cooldown = Cooldown(0.8)
+        self.volume_step_cooldown = Cooldown(0.08)
         self.last_scroll_y = None
         self.volume_interface = self._init_volume()
+        self._last_volume_scalar: float | None = None
         self.drawing_points: list[tuple[int, int]] = []
         self.is_dragging = False
 
+        # Disable PyAutoGUI corner failsafe for uninterrupted gesture control.
         pyautogui.FAILSAFE = False
         pyautogui.PAUSE = 0.01
 
     def _init_volume(self):
+        # Initialize Windows master volume endpoint (pycaw) once.
         if not AudioUtilities:
             return None
         try:
@@ -64,6 +67,7 @@ class ActionController:
             return None
 
     def move_cursor(self, index_tip: tuple[int, int]) -> None:
+        # Convert camera point -> screen point and smooth movement.
         x = np.interp(index_tip[0], [0, self.frame_width], [0, self.screen_w])
         y = np.interp(index_tip[1], [0, self.frame_height], [0, self.screen_h])
         sx, sy = self.cursor_filter.update(x, y)
@@ -93,6 +97,7 @@ class ActionController:
             self.is_dragging = False
 
     def scroll(self, y: int) -> None:
+        # Scroll amount is based on vertical delta between consecutive frames.
         if self.last_scroll_y is None:
             self.last_scroll_y = y
             return
@@ -101,13 +106,35 @@ class ActionController:
         pyautogui.scroll(int(dy * THRESHOLDS.scroll_sensitivity))
 
     def set_volume_by_distance(self, distance: float) -> None:
-        if not self.volume_interface:
-            return
+        # Map pinch distance into [0..1] volume scalar.
         distance = clamp(distance, 20.0, 200.0)
-        level = np.interp(distance, [20.0, 200.0], [0.0, 1.0])
-        self.volume_interface.SetMasterVolumeLevelScalar(float(level), None)
+        level = float(np.interp(distance, [20.0, 200.0], [0.0, 1.0]))
+
+        # Preferred path: direct scalar volume control through pycaw.
+        if self.volume_interface:
+            self.volume_interface.SetMasterVolumeLevelScalar(level, None)
+            self._last_volume_scalar = level
+            return
+
+        # Fallback path: media key stepping when pycaw is unavailable.
+        if not keyboard:
+            return
+        if self._last_volume_scalar is None:
+            self._last_volume_scalar = level
+            return
+        if not self.volume_step_cooldown.ready():
+            return
+
+        delta = level - self._last_volume_scalar
+        if delta > 0.04:
+            keyboard.send("volume up")
+            self._last_volume_scalar = min(1.0, self._last_volume_scalar + 0.05)
+        elif delta < -0.04:
+            keyboard.send("volume down")
+            self._last_volume_scalar = max(0.0, self._last_volume_scalar - 0.05)
 
     def set_brightness_by_y(self, y: float) -> None:
+        # Higher hand -> higher brightness (inverted Y-axis mapping).
         if not sbc:
             return
         percent = np.interp(y, [0, self.frame_height], [100, 10])
@@ -117,6 +144,7 @@ class ActionController:
             pass
 
     def media_key(self, key: str) -> None:
+        # Send media keyboard key with cooldown to avoid rapid repeats.
         if not keyboard:
             return
         if self.media_cooldown.ready():
@@ -140,6 +168,7 @@ class ActionController:
         pyautogui.hotkey("alt", "f4")
 
     def minimize_active_window(self) -> None:
+        # Minimize currently focused window.
         if not self.window_cooldown.ready():
             return
         try:
@@ -150,6 +179,7 @@ class ActionController:
             pass
 
     def maximize_restore_active_window(self) -> None:
+        # Toggle maximize/restore for currently focused window.
         if not self.window_cooldown.ready():
             return
         try:

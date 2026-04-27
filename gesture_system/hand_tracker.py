@@ -1,5 +1,3 @@
-"""MediaPipe based hand tracker with robust API fallback."""
-
 from __future__ import annotations
 
 import time
@@ -13,7 +11,9 @@ import numpy as np
 
 class HandTracker:
     def __init__(self, detection_confidence: float, tracking_confidence: float) -> None:
+        # "backend" tells us which MediaPipe API is available in this environment.
         self.backend = "unknown"
+        # Fallback hand skeleton edges for tasks mode custom drawing.
         self._connections = [
             (0, 1), (1, 2), (2, 3), (3, 4),
             (0, 5), (5, 6), (6, 7), (7, 8),
@@ -23,6 +23,7 @@ class HandTracker:
             (0, 17),
         ]
 
+        # Preferred legacy API when available.
         if hasattr(mp, "solutions"):
             self.backend = "solutions"
             self.mp_hands = mp.solutions.hands
@@ -34,6 +35,7 @@ class HandTracker:
             )
             return
 
+        # Newer MediaPipe builds expose only Tasks API.
         if hasattr(mp, "tasks"):
             self.backend = "tasks"
             from mediapipe.tasks import python
@@ -48,6 +50,7 @@ class HandTracker:
                 running_mode=vision.RunningMode.VIDEO,
             )
             self.landmarker = vision.HandLandmarker.create_from_options(options)
+            # VIDEO mode requires strictly increasing timestamps.
             self._last_timestamp_ms = 0
             return
 
@@ -55,6 +58,7 @@ class HandTracker:
 
     @staticmethod
     def _ensure_task_model() -> str:
+        # Tasks API needs a .task model file. Download once if missing.
         model_path = Path("models/hand_landmarker.task")
         if model_path.exists():
             return str(model_path)
@@ -73,11 +77,13 @@ class HandTracker:
         return str(model_path)
 
     def process(self, frame):
+        # MediaPipe expects RGB frames.
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         if self.backend == "solutions":
             return self.hands.process(rgb)
 
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=np.ascontiguousarray(rgb))
+        # Keep timestamp monotonic for detect_for_video.
         timestamp_ms = int(time.time() * 1000)
         if timestamp_ms <= self._last_timestamp_ms:
             timestamp_ms = self._last_timestamp_ms + 1
@@ -85,6 +91,7 @@ class HandTracker:
         return self.landmarker.detect_for_video(mp_image, timestamp_ms)
 
     def extract_landmarks(self, frame, results):
+        # Convert MediaPipe outputs into a unified internal hand format.
         if self.backend == "solutions":
             if not results.multi_hand_landmarks:
                 return []
@@ -115,6 +122,7 @@ class HandTracker:
         return detected_hands
 
     def draw(self, frame, hand):
+        # Use native drawing when available; fallback to manual drawing for tasks mode.
         if self.backend == "solutions":
             self.mp_draw.draw_landmarks(frame, hand["raw"], self.mp_hands.HAND_CONNECTIONS)
             return

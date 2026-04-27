@@ -12,6 +12,7 @@ from gesture_system.hand_tracker import HandTracker
 
 
 def _normalize_landmarks(lm: list[tuple[int, int]]) -> list[float]:
+    # Normalize landmarks relative to wrist so model is less sensitive to position/scale.
     base_x, base_y = lm[0]
     rel = [(x - base_x, y - base_y) for x, y in lm]
     max_abs = max(max(abs(x), abs(y)) for x, y in rel) or 1
@@ -19,6 +20,7 @@ def _normalize_landmarks(lm: list[tuple[int, int]]) -> list[float]:
 
 
 def collect_dataset(label: str, samples: int = 300, output_csv: str = "gesture_dataset.csv") -> None:
+    # Collect labeled gesture samples from webcam and append to CSV.
     cap = cv2.VideoCapture(0)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA.width)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA.height)
@@ -40,6 +42,7 @@ def collect_dataset(label: str, samples: int = 300, output_csv: str = "gesture_d
                 break
 
             frame = cv2.flip(frame, 1)
+            # Optional enhanced frame variant for low-light robustness.
             enhanced = frame
             if CAMERA.low_light_enhancement:
                 ycrcb = cv2.cvtColor(frame, cv2.COLOR_BGR2YCrCb)
@@ -53,12 +56,14 @@ def collect_dataset(label: str, samples: int = 300, output_csv: str = "gesture_d
             hands_low = tracker.extract_landmarks(enhanced, results_low)
 
             if hands:
+                # Save normal-light sample.
                 lm = hands[0]["landmarks"]
                 row = _normalize_landmarks(lm) + [label, "normal"]
                 writer.writerow(row)
                 captured += 1
                 tracker.draw(frame, hands[0])
             if hands_low and captured < samples:
+                # Save enhanced-light sample variant.
                 lm_low = hands_low[0]["landmarks"]
                 row_low = _normalize_landmarks(lm_low) + [label, "enhanced"]
                 writer.writerow(row_low)

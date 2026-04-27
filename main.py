@@ -1,5 +1,3 @@
-"""Main entry point for AI-based gesture controlled system."""
-
 from __future__ import annotations
 
 import sys
@@ -15,6 +13,7 @@ from gesture_system.hand_tracker import HandTracker
 
 def enhance_for_low_light(frame):
     # Lightweight enhancement for low-light scenes.
+    # Keep this inexpensive because it runs in real-time.
     ycrcb = cv2.cvtColor(frame, cv2.COLOR_BGR2YCrCb)
     y, cr, cb = cv2.split(ycrcb)
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
@@ -25,6 +24,7 @@ def enhance_for_low_light(frame):
 
 
 def validate_runtime() -> None:
+    # MediaPipe wheels are unstable on Python 3.13+ in many Windows setups.
     major, minor = sys.version_info.major, sys.version_info.minor
     if (major, minor) >= (3, 13):
         raise RuntimeError(
@@ -35,6 +35,7 @@ def validate_runtime() -> None:
 
 
 def draw_overlay(frame, active_mode: str, active_gesture: str, fps: float, is_running: bool) -> None:
+    # Top-left status panel for quick debugging/demo visibility.
     cv2.rectangle(frame, (10, 10), (430, 160), UI.panel_color, -1)
     cv2.putText(
         frame,
@@ -77,6 +78,7 @@ def draw_overlay(frame, active_mode: str, active_gesture: str, fps: float, is_ru
 
 
 def draw_canvas(frame, points: list[tuple[int, int]]) -> None:
+    # Draw all stored points as a continuous stroke sequence.
     if len(points) < 2:
         return
     for i in range(1, len(points)):
@@ -84,6 +86,7 @@ def draw_canvas(frame, points: list[tuple[int, int]]) -> None:
 
 
 def main() -> None:
+    # Initialize webcam with thermal-safe defaults from config.
     validate_runtime()
 
     cap = cv2.VideoCapture(0)
@@ -91,6 +94,7 @@ def main() -> None:
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA.height)
 
     try:
+        # Tracker supports both MediaPipe "solutions" and "tasks" APIs.
         tracker = HandTracker(CAMERA.detection_confidence, CAMERA.tracking_confidence)
     except Exception as exc:
         raise RuntimeError(
@@ -121,6 +125,7 @@ def main() -> None:
         frame = cv2.flip(frame, 1)
         if low_light_enabled:
             frame = enhance_for_low_light(frame)
+        # Skip expensive landmark inference on some frames to reduce CPU/GPU load.
         frame_counter += 1
         should_process = vision_enabled and (frame_counter % max(CAMERA.process_every_n_frames, 1) == 0)
 
@@ -128,6 +133,7 @@ def main() -> None:
             results = tracker.process(frame)
             cached_hands = tracker.extract_landmarks(frame, results)
 
+        # Reuse last valid detection on skipped frames for smoother/cheaper runtime.
         hands = cached_hands if vision_enabled else []
 
         if hands:
@@ -163,6 +169,10 @@ def main() -> None:
                     actions.media_key("next track")
                 elif active_gesture == "MEDIA_PREV":
                     actions.media_key("previous track")
+                # elif active_gesture == "SCREENSHOT":
+                #     actions.screenshot()
+                # elif active_gesture == "LOCK_SYSTEM":
+                #     actions.lock_system()
                 elif active_gesture == "MINIMIZE_WINDOW":
                     actions.minimize_active_window()
                 elif active_gesture == "MAXIMIZE_RESTORE_WINDOW":
@@ -214,12 +224,14 @@ def main() -> None:
         if key == ord("l"):
             low_light_enabled = not low_light_enabled
         if key == ord("v"):
+            # Emergency toggle: instantly disable vision processing to cool system.
             vision_enabled = not vision_enabled
             if not vision_enabled:
                 cached_hands = []
         if key == ord("c") and active_mode == "DRAW":
             actions.clear_drawing()
 
+        # Frame-rate cap keeps CPU usage predictable and avoids overheating spikes.
         elapsed = time.time() - loop_start
         sleep_time = target_frame_time - elapsed
         if sleep_time > 0:

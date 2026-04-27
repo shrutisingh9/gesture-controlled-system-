@@ -1,5 +1,3 @@
-"""Utility helpers for geometry, smoothing, and time."""
-
 from __future__ import annotations
 
 import math
@@ -8,10 +6,12 @@ from dataclasses import dataclass
 
 
 def euclidean(p1: tuple[float, float], p2: tuple[float, float]) -> float:
+    # 2D distance helper used by pinch and spacing gestures.
     return math.dist(p1, p2)
 
 
 def clamp(value: float, low: float, high: float) -> float:
+    # Keep values inside safe bounds.
     return max(low, min(high, value))
 
 
@@ -23,6 +23,7 @@ class LowPassFilter:
     initialized: bool = False
 
     def update(self, x: float, y: float) -> tuple[float, float]:
+        # Exponential smoothing to reduce cursor jitter.
         if not self.initialized:
             self.value_x, self.value_y = x, y
             self.initialized = True
@@ -39,6 +40,7 @@ class Cooldown:
         self._last = 0.0
 
     def ready(self) -> bool:
+        # Returns True only if enough time passed since last trigger.
         now = time.time()
         if now - self._last >= self.cooldown_s:
             self._last = now

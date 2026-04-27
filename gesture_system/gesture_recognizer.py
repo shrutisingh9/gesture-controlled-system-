@@ -1,5 +1,3 @@
-"""Rule-based gesture recognition from hand landmarks."""
-
 from __future__ import annotations
 
 import time
@@ -27,9 +25,11 @@ class GestureState:
 
 class GestureRecognizer:
     def __init__(self) -> None:
+        # Stores timing/state needed for temporal gestures (drag, double-click, swipe).
         self.state = GestureState()
 
     def _stabilize(self, gesture: str) -> str:
+        # Require repeated frames for non-instant gestures to reduce false triggers.
         if gesture == "NONE":
             self.state.candidate_gesture = "NONE"
             self.state.candidate_count = 0
@@ -47,6 +47,7 @@ class GestureRecognizer:
 
     @staticmethod
     def finger_states(lm: list[tuple[int, int]]) -> dict[str, bool]:
+        # Finger "up" logic based on tip vs knuckle geometry.
         thumb_up = lm[TIP_IDS["thumb"]][0] > lm[TIP_IDS["thumb"] - 1][0]
         return {
             "thumb": thumb_up,
@@ -57,6 +58,7 @@ class GestureRecognizer:
         }
 
     def recognize(self, hand: dict, mode: str) -> dict:
+        # Core rule-based recognizer.
         lm = hand["landmarks"]
         fingers = self.finger_states(lm)
         thumb = lm[TIP_IDS["thumb"]]
@@ -82,6 +84,7 @@ class GestureRecognizer:
                 gesture = "MOVE_CURSOR"
 
             if pinch_index < THRESHOLDS.pinch_distance:
+                # Pinch hold transitions into drag after hold duration.
                 if not self.state.pinch_active:
                     self.state.drag_start_time = now
                     self.state.pinch_active = True
@@ -89,6 +92,7 @@ class GestureRecognizer:
                     gesture = "DRAG"
                     self.state.drag_active = True
             else:
+                # Click is emitted on pinch release; this avoids accidental open while starting drag.
                 if self.state.pinch_active:
                     if self.state.drag_active:
                         gesture = "NONE"
@@ -106,7 +110,11 @@ class GestureRecognizer:
                 gesture = "RIGHT_CLICK"
 
         elif mode == "MEDIA":
-            if fingers["thumb"] and fingers["index"] and not fingers["middle"]:
+            # Media mode uses distance/pose and horizontal wrist swipe.
+            # Volume is controlled by thumb-index distance. Keep this lenient so it is easy to trigger.
+            if (not fingers["middle"]) and (not fingers["ring"]) and (not fingers["pinky"]) and pinch_index < (
+                THRESHOLDS.pinch_distance * 3.0
+            ):
                 gesture = "VOLUME"
                 payload["distance"] = pinch_index
             elif fingers["index"] and fingers["middle"] and fingers["ring"] and not fingers["pinky"]:
@@ -126,11 +134,17 @@ class GestureRecognizer:
                     self.state.swipe_anchor_x = wrist[0]
 
         elif mode == "DRAW":
+            # Drawing mode: index-only draws, fist pauses drawing.
             if fingers["index"] and not fingers["middle"] and not fingers["ring"] and not fingers["pinky"]:
                 gesture = "DRAW"
             elif not fingers["index"] and not fingers["middle"] and not fingers["ring"] and not fingers["pinky"]:
                 gesture = "DRAW_IDLE"
 
+        # Global utility gestures (mode-independent).
+        # if fingers["thumb"] and fingers["index"] and fingers["middle"] and not fingers["ring"] and not fingers["pinky"]:
+        #     gesture = "SCREENSHOT"
+        # if fingers["thumb"] and fingers["index"] and fingers["middle"] and fingers["ring"] and fingers["pinky"]:
+        #     gesture = "LOCK_SYSTEM"
         if not fingers["thumb"] and fingers["index"] and fingers["middle"] and not fingers["ring"] and fingers["pinky"]:
             gesture = "MINIMIZE_WINDOW"
         if fingers["thumb"] and not fingers["index"] and not fingers["middle"] and fingers["ring"] and not fingers["pinky"]:

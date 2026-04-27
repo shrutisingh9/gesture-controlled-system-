@@ -1,10 +1,9 @@
-"""Central configuration for gesture system."""
-
 from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
 class CameraConfig:
+    # Thermal-safe defaults for real-time use on typical laptops.
     width: int = 640
     height: int = 480
     smoothing_factor: float = 0.7
@@ -17,6 +16,7 @@ class CameraConfig:
 
 @dataclass(frozen=True)
 class GestureThresholds:
+    # Core thresholds controlling gesture timing and sensitivity.
     pinch_distance: float = 35.0
     click_cooldown_s: float = 0.25
     double_click_window_s: float = 0.35
@@ -30,6 +30,7 @@ class GestureThresholds:
 
 @dataclass(frozen=True)
 class UIConfig:
+    # Overlay style values for webcam preview.
     font_scale: float = 0.8
     text_thickness: int = 2
     panel_color: tuple = (35, 35, 35)

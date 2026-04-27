@@ -11,10 +11,12 @@ from tensorflow import keras
 
 
 def train(dataset_csv: str = "gesture_dataset.csv", model_path: str = "gesture_model.h5") -> None:
+    # Load numeric landmark features and labels.
     data = pd.read_csv(dataset_csv)
     x = data.drop(columns=["label", "lighting"], errors="ignore").values.astype("float32")
     y_raw = data["label"].values
 
+    # Lightweight augmentation improves generalization without collecting huge data.
     rng = np.random.default_rng(42)
     noise = rng.normal(0, 0.01, size=x.shape).astype("float32")
     scale = rng.uniform(0.9, 1.1, size=(x.shape[0], 1)).astype("float32")
@@ -28,6 +30,7 @@ def train(dataset_csv: str = "gesture_dataset.csv", model_path: str = "gesture_m
 
     x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, random_state=42)
 
+    # Dense classifier for flattened landmark vectors.
     model = keras.Sequential(
         [
             keras.layers.Input(shape=(x.shape[1],)),
@@ -46,12 +49,14 @@ def train(dataset_csv: str = "gesture_dataset.csv", model_path: str = "gesture_m
         metrics=["accuracy"],
     )
 
+    # Class balancing helps when some gestures have fewer samples.
     class_weights_arr = compute_class_weight(
         class_weight="balanced",
         classes=np.unique(np.argmax(y_train, axis=1)),
         y=np.argmax(y_train, axis=1),
     )
     class_weights = {i: w for i, w in enumerate(class_weights_arr)}
+    # Training safety callbacks: stop early and reduce LR on plateau.
     callbacks = [
         keras.callbacks.EarlyStopping(monitor="val_accuracy", patience=8, restore_best_weights=True),
         keras.callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=4, min_lr=1e-5),
@@ -67,6 +72,7 @@ def train(dataset_csv: str = "gesture_dataset.csv", model_path: str = "gesture_m
         class_weight=class_weights,
     )
 
+    # Final test-set evaluation and model/label export.
     loss, acc = model.evaluate(x_test, y_test, verbose=0)
     print(f"Test Accuracy: {acc:.4f}, Loss: {loss:.4f}")
     model.save(model_path)
